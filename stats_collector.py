@@ -1,5 +1,4 @@
 import logging
-import os
 import time
 
 import requests
@@ -21,14 +20,7 @@ REPORT_FIELDS = [
 ]
 
 
-def _get_token() -> str:
-    token = os.getenv("YANDEX_TOKEN")
-    if not token:
-        raise EnvironmentError("YANDEX_TOKEN не задан")
-    return token
-
-
-def fetch_stats(client_login: str, date_from: str, date_to: str) -> str:
+def fetch_stats(client_login: str, date_from: str, date_to: str, token: str) -> str:
     """
     Запрашивает AD_PERFORMANCE_REPORT для клиента в офлайн-режиме.
 
@@ -36,17 +28,15 @@ def fetch_stats(client_login: str, date_from: str, date_to: str) -> str:
         client_login: логин клиента агентства
         date_from: начало периода в формате YYYY-MM-DD
         date_to: конец периода в формате YYYY-MM-DD
+        token: OAuth-токен управляющего аккаунта клиента
 
     Returns:
         Содержимое отчёта в формате TSV (строка)
 
     Raises:
-        EnvironmentError: токен не задан
         TimeoutError: отчёт не готов за TIMEOUT_MINUTES минут
         RuntimeError: ошибка API
     """
-    token = _get_token()
-
     headers = {
         "Authorization": f"Bearer {token}",
         "Accept-Language": "ru",
@@ -103,7 +93,6 @@ def fetch_stats(client_login: str, date_from: str, date_to: str) -> str:
             time.sleep(POLL_INTERVAL)
             continue
 
-        # Любой другой статус — ошибка
         try:
             error_body = response.json()
             error_detail = error_body.get("error", {}).get("error_detail", response.text)
@@ -120,7 +109,8 @@ def collect_all_stats(clients_list: list[dict]) -> dict[str, str]:
     Собирает статистику за вчерашний день для каждого клиента из списка.
 
     Args:
-        clients_list: список словарей вида [{"login": "...", "name": "..."}, ...]
+        clients_list: список словарей вида
+            [{"login": "...", "name": "...", "token": "...", "account": 1}, ...]
 
     Returns:
         Словарь {"client_login": "tsv_data", ...}
@@ -135,18 +125,27 @@ def collect_all_stats(clients_list: list[dict]) -> dict[str, str]:
     for i, client in enumerate(clients_list):
         login = client.get("login", "")
         name = client.get("name", login)
+        token = client.get("token", "")
+        account = client.get("account", "?")
 
         if not login:
             logger.warning("Пропуск клиента без логина: %s", client)
             continue
 
-        logger.info("--- [%d/%d] Клиент: %s (%s) ---", i + 1, len(clients_list), login, name)
+        if not token:
+            logger.error("[%s] Нет токена, пропуск", login)
+            continue
+
+        logger.info(
+            "--- [%d/%d] Клиент: %s (%s) | Аккаунт %s ---",
+            i + 1, len(clients_list), login, name, account,
+        )
 
         try:
-            tsv = fetch_stats(login, yesterday, yesterday)
+            tsv = fetch_stats(login, yesterday, yesterday, token)
             results[login] = tsv
             logger.info("[%s] Успешно. Строк данных: %d", login, tsv.count("\n"))
-        except (TimeoutError, RuntimeError, EnvironmentError) as e:
+        except (TimeoutError, RuntimeError) as e:
             logger.error("[%s] Ошибка: %s", login, e)
 
         if i < len(clients_list) - 1:
@@ -167,5 +166,5 @@ if __name__ == "__main__":
         lines = tsv.strip().splitlines()
         print(f"\n=== {login} ({len(lines)} строк) ===")
         if lines:
-            print(lines[0])   # заголовок
+            print(lines[0])
             print(lines[1] if len(lines) > 1 else "(нет данных)")
