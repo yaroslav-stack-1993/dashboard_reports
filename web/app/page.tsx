@@ -58,17 +58,15 @@ export default function Dashboard() {
   const loadData = useCallback(async () => {
     setLoading(true)
 
-    let query = supabase
+    const queryBuilder = supabase
       .from("ad_stats")
       .select("client_login, date, clicks, impressions, cost, conversions, ctr, cost_per_conversion")
       .gte("date", dateFrom)
       .lte("date", dateTo)
 
-    if (selectedClient) {
-      query = query.eq("client_login", selectedClient)
-    }
-
-    const { data } = await query
+    const { data } = await (selectedClient
+      ? queryBuilder.eq("client_login", selectedClient)
+      : queryBuilder)
 
     if (!data) { setLoading(false); return }
 
