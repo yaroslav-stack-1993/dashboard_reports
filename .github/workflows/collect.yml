@@ -1,0 +1,32 @@
+name: Collect Yandex Direct Stats
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # каждый день в 02:00 UTC (05:00 МСК)
+  workflow_dispatch:       # ручной запуск из интерфейса GitHub
+
+jobs:
+  collect:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: pip install requests python-dotenv supabase
+
+      - name: Run stats collector
+        env:
+          YANDEX_TOKEN_1: ${{ secrets.YANDEX_TOKEN_1 }}
+          YANDEX_TOKEN_2: ${{ secrets.YANDEX_TOKEN_2 }}
+          YANDEX_TOKEN_3: ${{ secrets.YANDEX_TOKEN_3 }}
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_KEY: ${{ secrets.SUPABASE_KEY }}
+        run: python db_writer.py
